@@ -1,5 +1,7 @@
 
-* This application calls bankersalgo API to fetch conversion rate and send an email with conversion value
+## Currency Converter
+
+* This application calls bankersalgo API to fetch conversion rate for a given currency and send an email with conversion value
 
 * Service used for currency conversion : https://bankersalgo.com/account/
 
@@ -16,10 +18,20 @@
     * mail properties can be the same if you plan to use gmail for sending emails
 
 * Create application.properties on the machine running this application in path : /var/personal_projects/currency_converter/application.properties
-* This file contains parameters that are not safe to be made public.
+* Above file contains parameters that are not safe to be made public.
     * bankersalgo.accesskey - This can be fetched from bankersalgo account page (https://bankersalgo.com/account/)
     * support.email - email associated to the account for which google app is created
     * spring.mail.username - same as above
     * spring.mail.password - google app password generated in point 4 above.
 
-* sample-application.properties in the project has placeholders for properties that are not safe to be made public
+* sample-application.properties in the project(under resources directory) has placeholders for properties that are not safe to be made public
+
+* This application can be executed in intellij directly by right clicking on main class and running it. It can also be executed by generating a jar for the project.
+
+## Build
+```
+./gradlew clean build
+```
+
+Then to run the app :
+* java -jar build/libs/<app.jar> - this will keep application running according to schedule mentioned in scheduler cron in CurrencyConverter class
