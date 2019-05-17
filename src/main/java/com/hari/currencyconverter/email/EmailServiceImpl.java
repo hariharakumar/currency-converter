@@ -33,7 +33,7 @@ public class EmailServiceImpl implements EmailService {
 
         try {
             final SimpleMailMessage email = new SimpleMailMessage();
-            email.setSubject("Currency Conversion Rate");
+            email.setSubject("Currency Conversion Rate now");
             email.setTo(toEmail);
             email.setText(body);
             email.setFrom(fromEmail);

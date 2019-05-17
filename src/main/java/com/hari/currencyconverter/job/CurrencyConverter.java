@@ -25,20 +25,24 @@ public class CurrencyConverter {
     private final String toCurrency;
     private final String bankersAlgoBaseUrl;
     private final EmailService emailService;
+    private final Double currencyEmailThreshold;
 
     public CurrencyConverter(@Value("${bankersalgo.accesskey}") String apiAccessKey,
                              @Value("${from.currency}") String fromCurrency,
                              @Value("${to.currency}") String toCurrency,
-                             @Value("${bankersalgo.baseurl}") String bankersAlgoBaseUrl, EmailService emailService) {
+                             @Value("${bankersalgo.baseurl}") String bankersAlgoBaseUrl,
+                             @Value("${currency.email.threshold}") Double currencyEmailThreshold,
+                             EmailService emailService) {
         this.apiAccessKey = apiAccessKey;
         this.fromCurrency = fromCurrency;
         this.toCurrency = toCurrency;
         this.bankersAlgoBaseUrl = bankersAlgoBaseUrl;
         this.emailService = emailService;
+        this.currencyEmailThreshold = currencyEmailThreshold;
     }
 
     //@Scheduled(cron = "0 */15 6-20 * * MON-FRI")
-    @Scheduled(cron = "*/10 * * * * *")
+    @Scheduled(cron = "*/10 * * * * *") // CRON runs every 10 seconds
     public void processCurrencies() {
 
         LOGGER.info("Started the app");
@@ -56,7 +60,14 @@ public class CurrencyConverter {
         String emailBody = "Conversion value for 1 " + fromCurrency + " to " + toCurrency + " is " + conversionValue;
         LOGGER.info(emailBody);
 
-        emailService.sendEmail(emailBody);
+        /* Send email  :
+           1. If exchange value is more than value specified in config file AND
+           2. If email is already sent last time app ran and conversion value now is more than last time it was checked */
+
+        int comparisionValue = Double.compare(conversionValue, currencyEmailThreshold);
+        if(comparisionValue > 0) {
+            emailService.sendEmail(emailBody);
+        }
     }
 
     //TODO : add more validations in the future
