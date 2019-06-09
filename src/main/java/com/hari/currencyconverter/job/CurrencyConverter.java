@@ -17,7 +17,6 @@ import java.net.MalformedURLException;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
-import java.util.Date;
 import java.util.Scanner;
 
 @Component
@@ -32,6 +31,7 @@ public class CurrencyConverter {
     private final EmailService emailService;
     private final Double currencyEmailThreshold;
     private final MemcachedClient memcachedClient;
+    private final int maxEmailsPerDay;
 
     @Autowired
     public CurrencyConverter(@Value("${bankersalgo.accesskey}") String apiAccessKey,
@@ -39,6 +39,7 @@ public class CurrencyConverter {
                              @Value("${to.currency}") String toCurrency,
                              @Value("${bankersalgo.baseurl}") String bankersAlgoBaseUrl,
                              @Value("${currency.email.threshold}") Double currencyEmailThreshold,
+                             @Value("${max.emails.per.day}") int maxEmailsPerDay,
                              EmailService emailService,
                              MemcachedClient memcachedClient) {
         this.apiAccessKey           = apiAccessKey;
@@ -48,6 +49,7 @@ public class CurrencyConverter {
         this.emailService           = emailService;
         this.currencyEmailThreshold = currencyEmailThreshold;
         this.memcachedClient        = memcachedClient;
+        this.maxEmailsPerDay        = maxEmailsPerDay;
     }
 
     //@Scheduled(cron = "0 */15 6-20 * * MON-FRI")
@@ -72,7 +74,7 @@ public class CurrencyConverter {
         /* Send email  :
            1. If exchange value is more than value specified in config file OR
            2. If email is already sent last time app ran and conversion value now is 20 paise more than last time
-         ** Don't send email more than 5 times in a day */
+         ** Don't send email more than maxEmailsPerDay times in a day */
         if(Double.compare(currentConversionValue, currencyEmailThreshold) >= 0) {
 
             Object conversionValueInCache = memcachedClient.get(Constants.CONVERSION_KEY);
@@ -99,7 +101,7 @@ public class CurrencyConverter {
         LocalDateTime emailSentAt = previousEmailSentAtObj == null ? LocalDateTime.now() : (LocalDateTime) previousEmailSentAtObj;
         int emailSentCount        = emailSentCountObj == null ? 0 : (int) emailSentCountObj;
 
-        if(emailSentAt.getDayOfYear() - LocalDateTime.now().getDayOfYear() == 0 && emailSentCount >= 5) {
+        if(emailSentAt.getDayOfYear() - LocalDateTime.now().getDayOfYear() == 0 && emailSentCount >= maxEmailsPerDay) {
             return false;
         }
 
