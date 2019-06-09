@@ -1,9 +1,12 @@
 package com.hari.currencyconverter.job;
 
 import com.hari.currencyconverter.email.EmailService;
+import com.hari.currencyconverter.util.Constants;
+import net.spy.memcached.MemcachedClient;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.json.JSONObject;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
@@ -13,6 +16,8 @@ import java.net.HttpURLConnection;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
+import java.time.LocalDateTime;
+import java.util.Date;
 import java.util.Scanner;
 
 @Component
@@ -26,19 +31,23 @@ public class CurrencyConverter {
     private final String bankersAlgoBaseUrl;
     private final EmailService emailService;
     private final Double currencyEmailThreshold;
+    private final MemcachedClient memcachedClient;
 
+    @Autowired
     public CurrencyConverter(@Value("${bankersalgo.accesskey}") String apiAccessKey,
                              @Value("${from.currency}") String fromCurrency,
                              @Value("${to.currency}") String toCurrency,
                              @Value("${bankersalgo.baseurl}") String bankersAlgoBaseUrl,
                              @Value("${currency.email.threshold}") Double currencyEmailThreshold,
-                             EmailService emailService) {
-        this.apiAccessKey = apiAccessKey;
-        this.fromCurrency = fromCurrency;
-        this.toCurrency = toCurrency;
-        this.bankersAlgoBaseUrl = bankersAlgoBaseUrl;
-        this.emailService = emailService;
+                             EmailService emailService,
+                             MemcachedClient memcachedClient) {
+        this.apiAccessKey           = apiAccessKey;
+        this.fromCurrency           = fromCurrency;
+        this.toCurrency             = toCurrency;
+        this.bankersAlgoBaseUrl     = bankersAlgoBaseUrl;
+        this.emailService           = emailService;
         this.currencyEmailThreshold = currencyEmailThreshold;
+        this.memcachedClient        = memcachedClient;
     }
 
     //@Scheduled(cron = "0 */15 6-20 * * MON-FRI")
@@ -48,26 +57,53 @@ public class CurrencyConverter {
         LOGGER.info("Started the app");
 
         // Call bankersalgo API to get the exchange rate
-        JSONObject apiResponse = fetchCurrencyConversionObject();
-        boolean success = validateJsonResponse(apiResponse);
+        JSONObject apiResponse = fetchCurrencyConversionData();
+        boolean validationResponse = validateJsonResponse(apiResponse);
 
-        if(!success) {
+        if(!validationResponse) {
             throw new RuntimeException("Failed validations for API response from bankersalgo");
         }
 
-        Double conversionValue = apiResponse.getJSONObject("rates").getDouble(toCurrency);
+        Double currentConversionValue = apiResponse.getJSONObject("rates").getDouble(toCurrency);
 
-        String emailBody = "Conversion value for 1 " + fromCurrency + " to " + toCurrency + " is " + conversionValue;
+        String emailBody = "Conversion value for 1 " + fromCurrency + " to " + toCurrency + " currently is " + currentConversionValue;
         LOGGER.info(emailBody);
 
         /* Send email  :
-           1. If exchange value is more than value specified in config file AND
-           2. If email is already sent last time app ran and conversion value now is more than last time it was checked */
+           1. If exchange value is more than value specified in config file OR
+           2. If email is already sent last time app ran and conversion value now is 20 paise more than last time
+         ** Don't send email more than 5 times in a day */
+        if(Double.compare(currentConversionValue, currencyEmailThreshold) >= 0) {
 
-        int comparisionValue = Double.compare(conversionValue, currencyEmailThreshold);
-        if(comparisionValue > 0) {
-            emailService.sendEmail(emailBody);
+            Object conversionValueInCache = memcachedClient.get(Constants.CONVERSION_KEY);
+            Object emailSentCountObj      = memcachedClient.get(Constants.EMAIL_SENT_COUNT_KEY);
+            Object previousEmailSentAtObj = memcachedClient.get(Constants.EMAIL_SENT_TIME_KEY);
+
+            if(conversionValueInCache == null || Double.compare(currentConversionValue , (Double) conversionValueInCache + 0.20) >= 0) {
+
+                int emailSentCount = emailSentCountObj == null ? 0 : (int) emailSentCountObj;
+
+                if(canSendEmail(previousEmailSentAtObj, emailSentCountObj)) {
+                    // exp : 0 - item is never removed from cache - ttl = never expire
+                    memcachedClient.set(Constants.CONVERSION_KEY, 0, currentConversionValue);
+                    memcachedClient.set(Constants.EMAIL_SENT_COUNT_KEY, 0, emailSentCount + 1);
+                    memcachedClient.set(Constants.EMAIL_SENT_TIME_KEY, 0, LocalDateTime.now());
+                    emailService.sendEmail(emailBody);
+                }
+            }
         }
+    }
+
+    private boolean canSendEmail(Object previousEmailSentAtObj, Object emailSentCountObj) {
+
+        LocalDateTime emailSentAt = previousEmailSentAtObj == null ? LocalDateTime.now() : (LocalDateTime) previousEmailSentAtObj;
+        int emailSentCount        = emailSentCountObj == null ? 0 : (int) emailSentCountObj;
+
+        if(emailSentAt.getDayOfYear() - LocalDateTime.now().getDayOfYear() == 0 && emailSentCount >= 5) {
+            return false;
+        }
+
+        return true;
     }
 
     //TODO : add more validations in the future
@@ -87,7 +123,7 @@ public class CurrencyConverter {
     }
 
 
-    public JSONObject fetchCurrencyConversionObject() {
+    public JSONObject fetchCurrencyConversionData() {
 
         HttpURLConnection connection = null;
         JSONObject apiResponse = new JSONObject();
@@ -123,5 +159,4 @@ public class CurrencyConverter {
 
         return apiResponse;
     }
-
 }
