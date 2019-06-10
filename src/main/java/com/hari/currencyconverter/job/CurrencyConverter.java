@@ -54,8 +54,8 @@ public class CurrencyConverter {
         this.maxEmailsPerDay        = maxEmailsPerDay;
     }
 
-    //@Scheduled(cron = "0 */15 6-20 * * MON-FRI")
-    @Scheduled(cron = "*/10 * * * * *") // CRON runs every 10 seconds
+    @Scheduled(cron = "0 */15 6-20 * * MON-FRI")
+    //@Scheduled(cron = "*/10 * * * * *") //TODO :remove me: for now running CRON every 10 seconds
     public void processCurrencies() {
 
         LOGGER.info("Started the app");
