@@ -10,6 +10,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
+import org.springframework.util.StringUtils;
 
 import java.io.IOException;
 import java.net.HttpURLConnection;
@@ -17,6 +18,7 @@ import java.net.MalformedURLException;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
+import java.util.Currency;
 import java.util.Scanner;
 
 @Component
@@ -58,6 +60,8 @@ public class CurrencyConverter {
 
         LOGGER.info("Started the app");
 
+        validateInputParams(fromCurrency, toCurrency);
+
         // Call bankersalgo API to get the exchange rate
         JSONObject apiResponse = fetchCurrencyConversionData();
         boolean validationResponse = validateJsonResponse(apiResponse);
@@ -96,6 +100,30 @@ public class CurrencyConverter {
         }
     }
 
+    private void validateInputParams(String fromCurrency, String toCurrency) {
+
+        if(StringUtils.isEmpty(fromCurrency) || StringUtils.isEmpty(toCurrency)) {
+            LOGGER.error("fromCurrency and toCurrency values cannot be null or empty");
+            throw new RuntimeException("fromCurrency and toCurrency values cannot be null or empty");
+        }
+
+        try {
+            Currency.getInstance(fromCurrency);
+        }
+        catch (IllegalArgumentException iae) {
+            LOGGER.error("fromCurrency is invalid: " + fromCurrency);
+            throw new RuntimeException("fromCurrency is invalid");
+        }
+
+        try {
+            Currency.getInstance(toCurrency);
+        }
+        catch (IllegalArgumentException iae) {
+            LOGGER.error("toCurrency is invalid: " + toCurrency);
+            throw new RuntimeException("toCurrency is invalid");
+        }
+    }
+
     private boolean canSendEmail(Object previousEmailSentAtObj, Object emailSentCountObj) {
 
         LocalDateTime emailSentAt = previousEmailSentAtObj == null ? LocalDateTime.now() : (LocalDateTime) previousEmailSentAtObj;
@@ -128,7 +156,6 @@ public class CurrencyConverter {
     public JSONObject fetchCurrencyConversionData() {
 
         HttpURLConnection connection = null;
-        JSONObject apiResponse = new JSONObject();
 
         try {
             URL url = new URL(bankersAlgoBaseUrl + apiAccessKey + "/" + fromCurrency);
@@ -136,29 +163,29 @@ public class CurrencyConverter {
             connection.setRequestMethod("GET");
             connection.setRequestProperty("Accept", "application/json");
 
-            if(connection.getResponseCode() != 200) {
-                throw new RuntimeException("Failed, Http Error code : " + connection.getResponseCode());
-            }
-
             Scanner scanner = new Scanner(connection.getInputStream(), StandardCharsets.UTF_8.name());
             String response = scanner.useDelimiter("\\A").next();
 
-            apiResponse = new JSONObject(response);
+            if(connection.getResponseCode() != 200) {
+                LOGGER.error("Failed call to bankers API. Http Error code : " + connection.getResponseCode() +
+                                "Error response : " + response);
+                throw new RuntimeException("Error when making call to bankers API. Refer to application logs for more info");
+            }
 
-            return apiResponse;
+            return new JSONObject(response);
         }
         catch (MalformedURLException me) {
-            LOGGER.error("Error with request URL: " + me);
+            LOGGER.error("Error with bankers algo API URL: " + me);
+            throw new RuntimeException("Error when making call to bankers API. Refer to application logs for more info");
         }
         catch (IOException ie) {
             LOGGER.error("Exception when making API call: " + ie);
+            throw new RuntimeException("Error when making call to bankers API. Refer to application logs for more info");
         }
         finally { // TODO : change this to java 8 style try with catch
             if(connection != null) {
                 connection.disconnect();
             }
         }
-
-        return apiResponse;
     }
 }
